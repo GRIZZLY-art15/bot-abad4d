@@ -46,7 +46,6 @@ def load_promos():
             data = json.load(f)
             promos = data.get("promos", [])
             settings = data.get("settings", {})
-            # Default interval jika tidak ada
             if not settings.get("broadcast_interval_minutes"):
                 settings["broadcast_interval_minutes"] = 20
             return promos, settings
@@ -110,6 +109,43 @@ def send_telegram_message(chat_id, text, photo_url=None, button_text=None, butto
         print(f"Error send: {e}")
         return None
 
+def send_promo_list(chat_id):
+    """Kirim daftar promo dengan tombol klik"""
+    if not promos:
+        send_telegram_message(chat_id, "Belum ada promo tersedia.")
+        return
+    
+    # Buat keyboard dengan tombol untuk setiap promo
+    # Setiap baris berisi 2 tombol (biar tidak terlalu panjang)
+    keyboard = []
+    row = []
+    for i, promo in enumerate(promos, 1):
+        row.append({"text": f"{i}. {promo['title'][:20]}", "callback_data": f"promo_{promo['id']}"})
+        if len(row) == 2:  # 2 tombol per baris
+            keyboard.append(row)
+            row = []
+    if row:  # Sisa tombol
+        keyboard.append(row)
+    
+    # Tambah tombol kembali ke menu utama
+    keyboard.append([{"text": "🔙 Kembali ke Menu", "callback_data": "back_to_menu"}])
+    
+    reply_markup = {"inline_keyboard": keyboard}
+    send_telegram_message(chat_id, "*📋 DAFTAR PROMO ABAD4D*\n\nKlik promo yang ingin kamu lihat:", reply_markup=reply_markup)
+
+def send_main_menu(chat_id):
+    """Kirim menu utama dengan tombol"""
+    welcome_msg = config.get("welcome_message", "Selamat datang di Abad4D Bot!")
+    
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "🌐 Kunjungi Website", "url": config.get("website_url")}],
+            [{"text": "🎰 Lihat Semua Promo", "callback_data": "list_promos"}],
+            [{"text": "ℹ️ Bantuan", "callback_data": "help"}]
+        ]
+    }
+    send_telegram_message(chat_id, welcome_msg, reply_markup=keyboard)
+
 def broadcast_promo():
     global broadcast_status
     
@@ -147,7 +183,6 @@ def broadcast_promo():
             fail += 1
         time.sleep(0.05)
     
-    # Update status
     broadcast_status["last_broadcast_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     broadcast_status["last_broadcast_title"] = promo['title']
     broadcast_status["total_broadcasts_sent"] += 1
@@ -346,16 +381,26 @@ def webhook():
                 print(f"📝 User baru: {username} ({chat_id}) - Total: {len(current_users)}")
             
             if text == "/start":
-                welcome_msg = config.get("welcome_message", "Selamat datang di Abad4D Bot!")
+                send_main_menu(chat_id)
+                print(f"📨 Menu sent to {username}")
                 
-                keyboard = {
-                    "inline_keyboard": [
-                        [{"text": "🌐 Website", "url": config.get("website_url")}],
-                        [{"text": "🎰 Lihat Promo", "callback_data": "list_promos"}]
-                    ]
-                }
-                send_telegram_message(chat_id, welcome_msg, reply_markup=keyboard)
-                print(f"📨 Welcome sent to {username}")
+            elif text == "/help":
+                help_msg = """
+📖 *Panduan Bot Abad4D*
+
+/start - Menu utama
+/help - Panduan ini
+/promos - Lihat daftar promo
+
+*Fitur Baru:*
+✅ Klik tombol promo langsung lihat detail
+✅ Broadcast promo setiap 20 menit otomatis
+✅ 8 Promo menarik dengan gambar
+"""
+                send_telegram_message(chat_id, help_msg)
+                
+            elif text == "/promos":
+                send_promo_list(chat_id)
                 
             elif text == "/status" and str(chat_id) == str(ADMIN_ID):
                 remaining = broadcast_status.get("next_broadcast_in", 0)
@@ -377,54 +422,6 @@ def webhook():
                 send_telegram_message(chat_id, status_msg)
                 print(f"📊 Status sent to admin {username}")
                 
-            elif text == "/help":
-                help_msg = """
-📖 *Panduan Bot Abad4D*
-
-/start - Memulai bot
-/help - Panduan ini
-/promos - Lihat semua promo
-/status - Cek status broadcast (admin only)
-
-*Fitur:*
-⏰ Broadcast promo setiap 20 menit otomatis
-🎁 8 Promo menarik dengan gambar
-"""
-                send_telegram_message(chat_id, help_msg)
-                
-            elif text == "/promos":
-                if not promos:
-                    send_telegram_message(chat_id, "Belum ada promo tersedia.")
-                else:
-                    msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
-                    for i, p in enumerate(promos, 1):
-                        msg += f"{i}. {p['title']}\n"
-                    msg += "\nKetik /promo <nomor> untuk detail"
-                    send_telegram_message(chat_id, msg)
-                    
-            elif text.startswith("/promo"):
-                try:
-                    parts = text.split()
-                    if len(parts) < 2:
-                        send_telegram_message(chat_id, "Gunakan: /promo <nomor>")
-                        return
-                    num = int(parts[1]) - 1
-                    if 0 <= num < len(promos):
-                        p = promos[num]
-                        send_telegram_message(
-                            chat_id,
-                            p['message'],
-                            p.get('image_url'),
-                            p.get('button_text'),
-                            p.get('button_url')
-                        )
-                    else:
-                        send_telegram_message(chat_id, "Nomor promo tidak ditemukan")
-                except ValueError:
-                    send_telegram_message(chat_id, "Gunakan: /promo <nomor>")
-                except Exception as e:
-                    send_telegram_message(chat_id, f"Error: {e}")
-                    
             elif text == "/stats" and str(chat_id) == str(ADMIN_ID):
                 total_users = len(load_users())
                 interval = promo_settings.get('broadcast_interval_minutes', 20)
@@ -444,20 +441,71 @@ def webhook():
                 else:
                     send_telegram_message(chat_id, "Gunakan: /broadcast <pesan>")
             else:
-                send_telegram_message(chat_id, "🤖 Kirim /start untuk memulai")
+                send_main_menu(chat_id)
         
         elif data and "callback_query" in data:
+            callback_data = data["callback_query"]["data"]
             chat_id = data["callback_query"]["message"]["chat"]["id"]
-            if not promos:
-                send_telegram_message(chat_id, "Belum ada promo tersedia.")
-            else:
-                msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
-                for i, p in enumerate(promos, 1):
-                    msg += f"{i}. {p['title']}\n"
-                msg += "\nKetik /promo <nomor> untuk detail"
-                send_telegram_message(chat_id, msg)
+            message_id = data["callback_query"]["message"]["message_id"]
             
-            # Answer callback query
+            if callback_data == "list_promos":
+                send_promo_list(chat_id)
+                
+            elif callback_data == "back_to_menu":
+                send_main_menu(chat_id)
+                
+            elif callback_data == "help":
+                help_msg = """
+📖 *Panduan Bot Abad4D*
+
+📌 *Cara Penggunaan:*
+• Klik tombol "Lihat Semua Promo" untuk melihat daftar promo
+• Klik promo yang ingin dilihat detailnya
+• Klik tombol "Kunjungi Website" untuk langsung ke website
+
+🎁 *Promo Tersedia:*
+• New Member Bonus 20% & 50%
+• Bonus Deposit Harian 10%
+• Rollingan Slot 1%
+• Cashback Sports 15%
+• Referral 2.5%
+
+⏰ *Broadcast Otomatis:*
+Bot akan mengirim promo menarik setiap 20 menit!
+
+🔙 Klik tombol kembali untuk ke menu utama
+"""
+                send_telegram_message(chat_id, help_msg)
+                
+            elif callback_data.startswith("promo_"):
+                try:
+                    promo_id = int(callback_data.split("_")[1])
+                    promo = next((p for p in promos if p.get('id') == promo_id), None)
+                    if promo:
+                        # Kirim detail promo dengan tombol klaim
+                        send_telegram_message(
+                            chat_id,
+                            promo.get('message', ''),
+                            promo.get('image_url'),
+                            promo.get('button_text', '🔥 Klaim Bonus'),
+                            promo.get('button_url', config.get('website_url'))
+                        )
+                        # Setelah kirim detail, kirim menu kembali
+                        time.sleep(0.5)
+                        keyboard = {
+                            "inline_keyboard": [
+                                [{"text": "🔙 Kembali ke Daftar Promo", "callback_data": "list_promos"}],
+                                [{"text": "🏠 Menu Utama", "callback_data": "back_to_menu"}]
+                            ]
+                        }
+                        send_telegram_message(chat_id, "👇 Pilih aksi selanjutnya:", reply_markup=keyboard)
+                    else:
+                        send_telegram_message(chat_id, "Promo tidak ditemukan.")
+                except Exception as e:
+                    print(f"Error processing promo callback: {e}")
+                    send_telegram_message(chat_id, "Terjadi kesalahan. Silakan coba lagi.")
+            
+            # Answer callback query (hilangkan loading)
             url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
             requests.post(url, json={"callback_query_id": data["callback_query"]["id"]})
         
@@ -504,7 +552,7 @@ if __name__ == "__main__":
     
     port = int(os.environ.get("PORT", 5000))
     print("=" * 60)
-    print("🤖 ABAD4D BOT TELEGRAM")
+    print("🤖 ABAD4D BOT TELEGRAM - CLICKABLE PROMO")
     print("=" * 60)
     print(f"🌐 Server running on port {port}")
     print(f"📡 Kunjungi /set_webhook untuk mengaktifkan webhook")
