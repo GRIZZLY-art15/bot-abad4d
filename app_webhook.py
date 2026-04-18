@@ -8,7 +8,7 @@ from flask import Flask, render_template, request, jsonify
 import requests
 
 # ========== KONFIGURASI ==========
-TOKEN = "8561643849:AABXxn31i0qd-Xz0ZnduL18115YEziEt8g"  # GANTI DENGAN TOKEN ASLI
+TOKEN = "8501043849:AAH8Xm31iGQd-XrGZnduLI9ll5YEzintEOg"  # GANTI DENGAN TOKEN ASLI
 ADMIN_ID = 7176181382  # GANTI DENGAN ID TELEGRAM KAMU
 # =================================
 
