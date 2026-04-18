@@ -4,18 +4,26 @@ import random
 import threading
 import time
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify
 import requests
 
 # ========== KONFIGURASI ==========
-TOKEN = "8501043849:AAH8Xm31iGQd-XrGZnduLI9ll5YEzintEOg"  # GANTI DENGAN TOKEN ASLI
-ADMIN_ID = 7176181382  # GANTI DENGAN ID TELEGRAM KAMU
+TOKEN = "8501043849:AAH8Xm31iGQd-XrGZnduLI9ll5YEzintEOg"
+ADMIN_ID = 7176181382
 # =================================
 
 app = Flask(__name__)
 app.secret_key = "s4r4h4n4kunC1k4l1s4j4tuh4n34y4h"
 
-# Load data files
+# Variabel untuk tracking broadcast
+broadcast_status = {
+    "last_broadcast_time": None,
+    "last_broadcast_title": None,
+    "next_broadcast_in": 0,
+    "total_broadcasts_sent": 0,
+    "is_running": True
+}
+
 DATA_FILE = "users.json"
 PROMO_FILE = "promo.json"
 CONFIG_FILE = "config.json"
@@ -92,14 +100,28 @@ def send_telegram_message(chat_id, text, photo_url=None, button_text=None, butto
         return None
 
 def broadcast_promo():
+    global broadcast_status
+    
     if not promos:
-        print("Tidak ada promo")
+        print("❌ Tidak ada promo")
         return
     
     promo = random.choice(promos) if promo_settings.get("random_order", True) else promos[0]
     users_list = load_users()
     
+    if len(users_list) == 0:
+        print("⚠️ Belum ada user yang terdaftar. Broadcast skipped.")
+        return
+    
     success = 0
+    fail = 0
+    
+    print("=" * 60)
+    print(f"📢 [BROADCAST] Memulai pengiriman promo...")
+    print(f"📢 Judul: {promo['title']}")
+    print(f"📢 Target: {len(users_list)} user")
+    print("=" * 60)
+    
     for user_id in users_list:
         result = send_telegram_message(
             user_id,
@@ -110,12 +132,26 @@ def broadcast_promo():
         )
         if result and result.get("ok"):
             success += 1
+        else:
+            fail += 1
         time.sleep(0.05)
     
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Broadcast: {success}/{len(users_list)} terkirim - {promo['title']}")
+    # Update status
+    broadcast_status["last_broadcast_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    broadcast_status["last_broadcast_title"] = promo['title']
+    broadcast_status["total_broadcasts_sent"] += 1
+    
+    print("=" * 60)
+    print(f"✅ [BROADCAST] Selesai!")
+    print(f"✅ Berhasil: {success} user")
+    print(f"❌ Gagal: {fail} user")
+    print(f"📅 Waktu: {broadcast_status['last_broadcast_time']}")
+    print("=" * 60)
 
 def broadcast_loop():
-    print("🔄 Broadcast loop dimulai...")
+    global broadcast_status
+    
+    print("🔄 [LOOP] Broadcast loop dimulai...")
     last_broadcast = 0
     
     while True:
@@ -123,17 +159,40 @@ def broadcast_loop():
         interval_minutes = promo_settings.get("broadcast_interval_minutes", 20)
         interval_seconds = interval_minutes * 60
         
+        if last_broadcast == 0:
+            remaining_minutes = interval_minutes
+            print(f"⏰ [LOOP] Broadcast pertama akan dimulai dalam {remaining_minutes} menit")
+            broadcast_status["next_broadcast_in"] = remaining_minutes * 60
+        
         if now - last_broadcast >= interval_seconds:
-            print(f"[{datetime.now()}] Memulai broadcast otomatis...")
+            print(f"\n🚀 [LOOP] Trigger broadcast pada {datetime.now().strftime('%H:%M:%S')}")
             broadcast_promo()
             last_broadcast = now
+            broadcast_status["next_broadcast_in"] = interval_seconds
+        else:
+            remaining = int(interval_seconds - (now - last_broadcast))
+            broadcast_status["next_broadcast_in"] = remaining
+            if remaining % 60 == 0 and remaining > 0:
+                print(f"⏳ [LOOP] Next broadcast in {remaining // 60} menit {remaining % 60} detik")
         
         time.sleep(30)
 
 # ============ FLASK ROUTES ============
 @app.route('/')
 def home():
-    return "🤖 Abad4D Bot is running! Akses /admin untuk admin panel"
+    return """
+    <html>
+    <head><title>Abad4D Bot</title></head>
+    <body style="font-family: Arial; text-align: center; padding: 50px;">
+        <h1>🤖 Abad4D Bot is Running!</h1>
+        <p>⏰ Broadcast setiap 20 menit</p>
+        <p>📊 <a href="/api/broadcast_status">Cek Status Broadcast</a></p>
+        <p>📋 <a href="/api/promos">Lihat Promo</a></p>
+        <p>👥 <a href="/api/users">Lihat User</a></p>
+        <p>📡 <a href="/set_webhook">Set Webhook</a></p>
+    </body>
+    </html>
+    """
 
 @app.route('/admin')
 def admin_panel():
@@ -141,6 +200,19 @@ def admin_panel():
         return render_template('admin.html')
     except Exception as e:
         return f"Error loading admin panel: {e}"
+
+@app.route('/api/broadcast_status')
+def api_broadcast_status():
+    """Endpoint untuk cek status broadcast"""
+    return jsonify({
+        'is_running': broadcast_status["is_running"],
+        'last_broadcast_time': broadcast_status.get("last_broadcast_time", "Belum pernah"),
+        'last_broadcast_title': broadcast_status.get("last_broadcast_title", "-"),
+        'next_broadcast_in_seconds': broadcast_status.get("next_broadcast_in", 0),
+        'next_broadcast_in_minutes': round(broadcast_status.get("next_broadcast_in", 0) / 60, 1),
+        'total_broadcasts_sent': broadcast_status.get("total_broadcasts_sent", 0),
+        'interval_minutes': promo_settings.get('broadcast_interval_minutes', 20)
+    })
 
 @app.route('/api/stats')
 def api_stats():
@@ -254,7 +326,6 @@ def api_broadcast_promo(promo_id):
 def webhook():
     try:
         data = request.get_json()
-        print(f"Webhook received: {data}")
         
         if data and "message" in data:
             chat_id = data["message"]["chat"]["id"]
@@ -265,34 +336,53 @@ def webhook():
             if chat_id not in current_users:
                 current_users.add(chat_id)
                 save_users(current_users)
-                print(f"User baru: {username} ({chat_id})")
+                print(f"📝 User baru: {username} ({chat_id}) - Total: {len(current_users)}")
             
             if text == "/start":
                 welcome_msg = config.get("welcome_message", "Selamat datang di Abad4D Bot!")
                 
                 keyboard = {
                     "inline_keyboard": [
-                        [{"text": "🌐 Kunjungi Website", "url": config.get("website_url")}],
-                        [{"text": "🎰 Lihat Semua Promo", "callback_data": "list_promos"}]
+                        [{"text": "🌐 Website", "url": config.get("website_url")}],
+                        [{"text": "🎰 Lihat Promo", "callback_data": "list_promos"}]
                     ]
                 }
                 send_telegram_message(chat_id, welcome_msg, reply_markup=keyboard)
+                print(f"📨 Welcome sent to {username}")
+                
+            elif text == "/status" and str(chat_id) == str(ADMIN_ID):
+                # Perintah khusus admin untuk cek status broadcast
+                remaining = broadcast_status.get("next_broadcast_in", 0)
+                remaining_min = int(remaining // 60)
+                remaining_sec = int(remaining % 60)
+                
+                status_msg = f"""
+📊 *STATUS BROADCAST*
+
+🔄 Status: {'✅ AKTIF' if broadcast_status['is_running'] else '❌ BERHENTI'}
+📅 Last broadcast: {broadcast_status.get('last_broadcast_time', 'Belum pernah')}
+📢 Last promo: {broadcast_status.get('last_broadcast_title', '-')}
+⏰ Next broadcast: {remaining_min} menit {remaining_sec} detik
+📊 Total broadcast: {broadcast_status.get('total_broadcasts_sent', 0)} kali
+👥 Total user: {len(load_users())}
+🎁 Total promo: {len(promos)}
+⏱️ Interval: {promo_settings.get('broadcast_interval_minutes', 20)} menit
+"""
+                send_telegram_message(chat_id, status_msg)
+                print(f"📊 Status sent to admin {username}")
                 
             elif text == "/help":
                 help_msg = """
 📖 *Panduan Bot Abad4D*
 
-/start - Memulai bot dan daftar promo
+/start - Memulai bot
 /help - Panduan ini
 /promos - Lihat semua promo
+/status - Cek status broadcast (admin only)
 
 *Fitur:*
-⏰ Setiap 20 menit akan dikirim promo menarik
-🎁 Bonus New Member 20% & 50%
-💰 Bonus Deposit Harian 10%
-🔄 Rollingan Slot 1%
-🏆 Cashback Sports 15%
-👥 Referral 2.5%
+⏰ Broadcast promo setiap 20 menit otomatis
+🎁 8 Promo menarik dengan gambar
 """
                 send_telegram_message(chat_id, help_msg)
                 
@@ -383,6 +473,9 @@ def set_webhook():
         <p>URL Webhook: <code>{webhook_url}</code></p>
         <p>Response: <pre>{json.dumps(result, indent=2)}</pre></p>
         <p>Sekarang coba kirim <code>/start</code> ke bot di Telegram.</p>
+        <hr>
+        <h3>📊 Cek Status Broadcast:</h3>
+        <p><a href="/api/broadcast_status">/api/broadcast_status</a></p>
         """
     else:
         return f"""
@@ -400,12 +493,13 @@ if __name__ == "__main__":
     broadcast_thread.start()
     
     port = int(os.environ.get("PORT", 5000))
-    print("=" * 50)
+    print("=" * 60)
     print("🤖 ABAD4D BOT TELEGRAM")
-    print("=" * 50)
+    print("=" * 60)
     print(f"🌐 Server running on port {port}")
     print(f"📡 Kunjungi /set_webhook untuk mengaktifkan webhook")
     print(f"🔄 Broadcast loop: AKTIF (setiap {promo_settings.get('broadcast_interval_minutes', 20)} menit)")
-    print("=" * 50)
+    print(f"📊 Cek status: /api/broadcast_status")
+    print("=" * 60)
     
     app.run(host="0.0.0.0", port=port)
