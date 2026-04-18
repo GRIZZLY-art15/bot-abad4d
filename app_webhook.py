@@ -4,7 +4,7 @@ import random
 import threading
 import time
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import requests
 
 # ========== KONFIGURASI ==========
@@ -13,6 +13,7 @@ ADMIN_ID = 7176181382  # GANTI DENGAN ID TELEGRAM KAMU
 # =================================
 
 app = Flask(__name__)
+app.secret_key = "s4r4h4n4kunC1k4l1s4j4tuh4n34y4h"
 
 # Load data files
 DATA_FILE = "users.json"
@@ -59,7 +60,6 @@ config = load_config()
 
 # ============ TELEGRAM FUNCTIONS ============
 def send_telegram_message(chat_id, text, photo_url=None, button_text=None, button_url=None, reply_markup=None):
-    """Kirim pesan ke Telegram"""
     if photo_url and promo_settings.get("send_image", True):
         url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
         payload = {
@@ -92,12 +92,11 @@ def send_telegram_message(chat_id, text, photo_url=None, button_text=None, butto
         return None
 
 def broadcast_promo():
-    """Kirim promo random ke semua user"""
     if not promos:
         print("Tidak ada promo")
         return
     
-    promo = random.choice(promos)
+    promo = random.choice(promos) if promo_settings.get("random_order", True) else promos[0]
     users_list = load_users()
     
     success = 0
@@ -113,42 +112,42 @@ def broadcast_promo():
             success += 1
         time.sleep(0.05)
     
-    print(f"[{datetime.now()}] Broadcast: {success} terkirim dari {len(users_list)} user")
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Broadcast: {success}/{len(users_list)} terkirim - {promo['title']}")
 
 def broadcast_loop():
-    """Loop untuk broadcast setiap jam"""
     print("🔄 Broadcast loop dimulai...")
     last_broadcast = 0
     
     while True:
         now = time.time()
-        interval = promo_settings.get("broadcast_interval_hours", 1) * 3600
+        interval_minutes = promo_settings.get("broadcast_interval_minutes", 20)
+        interval_seconds = interval_minutes * 60
         
-        if now - last_broadcast >= interval:
+        if now - last_broadcast >= interval_seconds:
             print(f"[{datetime.now()}] Memulai broadcast otomatis...")
             broadcast_promo()
             last_broadcast = now
         
-        time.sleep(60)  # Cek setiap menit
+        time.sleep(30)
 
 # ============ FLASK ROUTES ============
 @app.route('/')
 def home():
-    return "🤖 Abad4D Bot is running!"
+    return "🤖 Abad4D Bot is running! Akses /admin untuk admin panel"
 
 @app.route('/admin')
 def admin_panel():
     try:
         return render_template('admin.html')
-    except:
-        return "Admin panel template not found"
+    except Exception as e:
+        return f"Error loading admin panel: {e}"
 
 @app.route('/api/stats')
 def api_stats():
     return jsonify({
         'total_users': len(load_users()),
         'total_promos': len(promos),
-        'broadcast_interval': promo_settings.get('broadcast_interval_hours', 1),
+        'broadcast_interval': promo_settings.get('broadcast_interval_minutes', 20),
         'random_order': promo_settings.get('random_order', True),
         'send_image': promo_settings.get('send_image', True),
         'website_url': config.get('website_url'),
@@ -197,7 +196,7 @@ def api_delete_promo(promo_id):
 @app.route('/api/settings', methods=['POST'])
 def api_update_settings():
     data = request.json
-    promo_settings['broadcast_interval_hours'] = data.get('broadcast_interval_hours', 1)
+    promo_settings['broadcast_interval_minutes'] = data.get('broadcast_interval', 20)
     promo_settings['random_order'] = data.get('random_order', True)
     promo_settings['send_image'] = data.get('send_image', True)
     save_promos(promos, promo_settings)
@@ -253,7 +252,6 @@ def api_broadcast_promo(promo_id):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Endpoint untuk menerima pesan dari Telegram"""
     try:
         data = request.get_json()
         print(f"Webhook received: {data}")
@@ -263,18 +261,15 @@ def webhook():
             text = data["message"].get("text", "")
             username = data["message"]["chat"].get("username", "unknown")
             
-            # Simpan user baru
             current_users = load_users()
             if chat_id not in current_users:
                 current_users.add(chat_id)
                 save_users(current_users)
                 print(f"User baru: {username} ({chat_id})")
             
-            # Handle perintah
             if text == "/start":
                 welcome_msg = config.get("welcome_message", "Selamat datang di Abad4D Bot!")
                 
-                # Keyboard dengan tombol
                 keyboard = {
                     "inline_keyboard": [
                         [{"text": "🌐 Kunjungi Website", "url": config.get("website_url")}],
@@ -292,9 +287,12 @@ def webhook():
 /promos - Lihat semua promo
 
 *Fitur:*
-⏰ Setiap jam akan dikirim promo menarik
-🎁 Bonus New Member 50%
-💰 Cashback Mingguan 1%
+⏰ Setiap 20 menit akan dikirim promo menarik
+🎁 Bonus New Member 20% & 50%
+💰 Bonus Deposit Harian 10%
+🔄 Rollingan Slot 1%
+🏆 Cashback Sports 15%
+👥 Referral 2.5%
 """
                 send_telegram_message(chat_id, help_msg)
                 
@@ -327,7 +325,8 @@ def webhook():
                     
             elif text == "/stats" and str(chat_id) == str(ADMIN_ID):
                 total_users = len(load_users())
-                send_telegram_message(chat_id, f"📊 *Statistik Bot*\n\n👥 Total user: {total_users}\n🎁 Total promo: {len(promos)}")
+                interval = promo_settings.get('broadcast_interval_minutes', 20)
+                send_telegram_message(chat_id, f"📊 *Statistik Bot*\n\n👥 Total user: {total_users}\n🎁 Total promo: {len(promos)}\n⏰ Broadcast: setiap {interval} menit")
                 
             elif text.startswith("/broadcast") and str(chat_id) == str(ADMIN_ID):
                 msg = text.replace("/broadcast", "").strip()
@@ -345,11 +344,9 @@ def webhook():
             else:
                 send_telegram_message(chat_id, "🤖 Kirim /start untuk memulai")
         
-        # Handle callback query (tombol inline)
         elif data and "callback_query" in data:
             callback_data = data["callback_query"]["data"]
             chat_id = data["callback_query"]["message"]["chat"]["id"]
-            message_id = data["callback_query"]["message"]["message_id"]
             
             if callback_data == "list_promos":
                 if not promos:
@@ -361,7 +358,6 @@ def webhook():
                     msg += "\nKetik /promo <nomor> untuk detail"
                     send_telegram_message(chat_id, msg)
             
-            # Answer callback query (hilangkan loading)
             url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
             requests.post(url, json={"callback_query_id": data["callback_query"]["id"]})
         
@@ -372,7 +368,6 @@ def webhook():
 
 @app.route('/set_webhook')
 def set_webhook():
-    """Endpoint untuk mengatur webhook"""
     render_url = os.environ.get('RENDER_EXTERNAL_URL', request.host_url)
     if render_url.endswith('/'):
         render_url = render_url[:-1]
@@ -401,7 +396,6 @@ def health():
 
 # ============ MAIN ============
 if __name__ == "__main__":
-    # Mulai broadcast loop di thread terpisah
     broadcast_thread = threading.Thread(target=broadcast_loop, daemon=True)
     broadcast_thread.start()
     
@@ -411,7 +405,7 @@ if __name__ == "__main__":
     print("=" * 50)
     print(f"🌐 Server running on port {port}")
     print(f"📡 Kunjungi /set_webhook untuk mengaktifkan webhook")
-    print(f"🔄 Broadcast loop: AKTIF (setiap {promo_settings.get('broadcast_interval_hours', 1)} jam)")
+    print(f"🔄 Broadcast loop: AKTIF (setiap {promo_settings.get('broadcast_interval_minutes', 20)} menit)")
     print("=" * 50)
     
     app.run(host="0.0.0.0", port=port)
