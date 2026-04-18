@@ -31,7 +31,8 @@ CONFIG_FILE = "config.json"
 def load_users():
     try:
         with open(DATA_FILE, "r") as f:
-            return set(json.load(f))
+            data = json.load(f)
+            return set(data) if data else set()
     except:
         return set()
 
@@ -43,16 +44,22 @@ def load_promos():
     try:
         with open(PROMO_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("promos", []), data.get("settings", {})
-    except:
-        return [], {}
+            promos = data.get("promos", [])
+            settings = data.get("settings", {})
+            # Default interval jika tidak ada
+            if not settings.get("broadcast_interval_minutes"):
+                settings["broadcast_interval_minutes"] = 20
+            return promos, settings
+    except Exception as e:
+        print(f"Error loading promos: {e}")
+        return [], {"broadcast_interval_minutes": 20, "random_order": True, "send_image": True}
 
 def load_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
-        return {"welcome_message": "Selamat datang di Abad4D Bot!", "website_url": "https://siteq.link/abad4d"}
+        return {"welcome_message": "🌟 SELAMAT DATANG DI ABAD4D OFFICIAL 🌟\n\n🔥 PROMO SPESIAL UNTUK ANDA! 🔥\n\n👇 Klik tombol di bawah untuk mulai bermain", "website_url": "https://siteq.link/abad4d"}
 
 def save_promos(promos, settings):
     with open(PROMO_FILE, "w", encoding="utf-8") as f:
@@ -65,6 +72,10 @@ def save_config(config):
 users = load_users()
 promos, promo_settings = load_promos()
 config = load_config()
+
+print(f"✅ Loaded {len(promos)} promos")
+print(f"⏰ Broadcast interval: {promo_settings.get('broadcast_interval_minutes', 20)} minutes")
+print(f"👥 Total users: {len(users)}")
 
 # ============ TELEGRAM FUNCTIONS ============
 def send_telegram_message(chat_id, text, photo_url=None, button_text=None, button_url=None, reply_markup=None):
@@ -107,7 +118,7 @@ def broadcast_promo():
         return
     
     promo = random.choice(promos) if promo_settings.get("random_order", True) else promos[0]
-    users_list = load_users()
+    users_list = list(load_users())
     
     if len(users_list) == 0:
         print("⚠️ Belum ada user yang terdaftar. Broadcast skipped.")
@@ -160,9 +171,8 @@ def broadcast_loop():
         interval_seconds = interval_minutes * 60
         
         if last_broadcast == 0:
-            remaining_minutes = interval_minutes
-            print(f"⏰ [LOOP] Broadcast pertama akan dimulai dalam {remaining_minutes} menit")
-            broadcast_status["next_broadcast_in"] = remaining_minutes * 60
+            print(f"⏰ [LOOP] Broadcast pertama akan dimulai dalam {interval_minutes} menit")
+            broadcast_status["next_broadcast_in"] = interval_seconds
         
         if now - last_broadcast >= interval_seconds:
             print(f"\n🚀 [LOOP] Trigger broadcast pada {datetime.now().strftime('%H:%M:%S')}")
@@ -172,8 +182,6 @@ def broadcast_loop():
         else:
             remaining = int(interval_seconds - (now - last_broadcast))
             broadcast_status["next_broadcast_in"] = remaining
-            if remaining % 60 == 0 and remaining > 0:
-                print(f"⏳ [LOOP] Next broadcast in {remaining // 60} menit {remaining % 60} detik")
         
         time.sleep(30)
 
@@ -203,7 +211,6 @@ def admin_panel():
 
 @app.route('/api/broadcast_status')
 def api_broadcast_status():
-    """Endpoint untuk cek status broadcast"""
     return jsonify({
         'is_running': broadcast_status["is_running"],
         'last_broadcast_time': broadcast_status.get("last_broadcast_time", "Belum pernah"),
@@ -286,7 +293,7 @@ def api_get_users():
 @app.route('/api/broadcast', methods=['POST'])
 def api_broadcast():
     data = request.json
-    users_list = load_users()
+    users_list = list(load_users())
     success = 0
     for user_id in users_list:
         result = send_telegram_message(
@@ -307,7 +314,7 @@ def api_broadcast_promo(promo_id):
     if not promo:
         return jsonify({'error': 'Not found'}), 404
     
-    users_list = load_users()
+    users_list = list(load_users())
     success = 0
     for user_id in users_list:
         result = send_telegram_message(
@@ -351,7 +358,6 @@ def webhook():
                 print(f"📨 Welcome sent to {username}")
                 
             elif text == "/status" and str(chat_id) == str(ADMIN_ID):
-                # Perintah khusus admin untuk cek status broadcast
                 remaining = broadcast_status.get("next_broadcast_in", 0)
                 remaining_min = int(remaining // 60)
                 remaining_sec = int(remaining % 60)
@@ -398,7 +404,11 @@ def webhook():
                     
             elif text.startswith("/promo"):
                 try:
-                    num = int(text.split()[1]) - 1
+                    parts = text.split()
+                    if len(parts) < 2:
+                        send_telegram_message(chat_id, "Gunakan: /promo <nomor>")
+                        return
+                    num = int(parts[1]) - 1
                     if 0 <= num < len(promos):
                         p = promos[num]
                         send_telegram_message(
@@ -410,8 +420,10 @@ def webhook():
                         )
                     else:
                         send_telegram_message(chat_id, "Nomor promo tidak ditemukan")
-                except:
+                except ValueError:
                     send_telegram_message(chat_id, "Gunakan: /promo <nomor>")
+                except Exception as e:
+                    send_telegram_message(chat_id, f"Error: {e}")
                     
             elif text == "/stats" and str(chat_id) == str(ADMIN_ID):
                 total_users = len(load_users())
@@ -422,7 +434,7 @@ def webhook():
                 msg = text.replace("/broadcast", "").strip()
                 if msg:
                     send_telegram_message(chat_id, "⏳ Mengirim broadcast...")
-                    users_list = load_users()
+                    users_list = list(load_users())
                     sent = 0
                     for uid in users_list:
                         send_telegram_message(uid, msg)
@@ -435,19 +447,17 @@ def webhook():
                 send_telegram_message(chat_id, "🤖 Kirim /start untuk memulai")
         
         elif data and "callback_query" in data:
-            callback_data = data["callback_query"]["data"]
             chat_id = data["callback_query"]["message"]["chat"]["id"]
+            if not promos:
+                send_telegram_message(chat_id, "Belum ada promo tersedia.")
+            else:
+                msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
+                for i, p in enumerate(promos, 1):
+                    msg += f"{i}. {p['title']}\n"
+                msg += "\nKetik /promo <nomor> untuk detail"
+                send_telegram_message(chat_id, msg)
             
-            if callback_data == "list_promos":
-                if not promos:
-                    send_telegram_message(chat_id, "Belum ada promo tersedia.")
-                else:
-                    msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
-                    for i, p in enumerate(promos, 1):
-                        msg += f"{i}. {p['title']}\n"
-                    msg += "\nKetik /promo <nomor> untuk detail"
-                    send_telegram_message(chat_id, msg)
-            
+            # Answer callback query
             url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
             requests.post(url, json={"callback_query_id": data["callback_query"]["id"]})
         
