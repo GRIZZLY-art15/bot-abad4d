@@ -1,0 +1,49 @@
+{
+    "promos": [
+        {
+            "id": 1,
+            "title": "🎰 BONUS NEW MEMBER 50%",
+            "message": "🎉 *PROMO TERBARU!* 🎉\n\n✅ Bonus New Member *50%*\n✅ Minimal Deposit Rp10.000\n✅ Maksimal Bonus Rp200.000\n✅ Bisa untuk semua permainan Pragmatic Play!\n\n*Syarat & Ketentuan:*\n- Turnover 12x\n- Berlaku untuk deposit pertama\n\nKlik tombol di bawah untuk klaim!",
+            "image_url": "https://the.splg.site/images/2026/04/18/ABAD4D.png",
+            "button_text": "🔥 Klaim Bonus Sekarang",
+            "button_url": "https://siteq.link/abad4d"
+        },
+        {
+            "id": 2,
+            "title": "💰 CASHBACK MINGGUAN UP TO 1%",
+            "message": "💵 *CASHBACK MINGGUAN UP TO 1%* 💵\n\n✨ Dapatkan cashback 1% dari total kekalahan Anda!\n✨ Dibagikan setiap hari Senin\n✨ Tanpa batas maksimal\n✨ Langsung masuk ke akun Anda\n\n*Syarat:*\nMinimal kekalahan Rp100.000\n\n👇 Klik untuk detail lebih lanjut",
+            "image_url": "https://the.splg.site/images/2026/04/18/bg3.jpeg",
+            "button_text": "💰 Cek Cashback Saya",
+            "button_url": "https://siteq.link/abad4d"
+        },
+        {
+            "id": 3,
+            "title": "🎁 BONUS DEPOSIT HARIAN 10%",
+            "message": "🎁 *BONUS DEPOSIT HARIAN 10%* 🎁\n\nSetiap hari Anda bisa klaim:\n🔥 Bonus deposit *10%*\n🔥 Maksimal Rp100.000\n🔥 Kode promo: *HARIAN10*\n\n*Cara klaim:*\n1. Lakukan deposit minimal Rp10.000\n2. Masukkan kode promo *HARIAN10*\n3. Bonus langsung masuk!\n\nJangan sampai kelewatan!",
+            "image_url": "https://the.splg.site/images/2026/04/18/d6bf0d29-eb2a-4e76-91e3-169d0af70dd8.png",
+            "button_text": "🎁 Klaim Bonus Harian",
+            "button_url": "https://siteq.link/abad4d"
+        },
+        {
+            "id": 4,
+            "title": "🏆 BONUS PASUKAN PETIR",
+            "message": "🏆 *GATES OF OLYMPUS , GATES OF GATOT KACA , STARLIGHT PRINCESS* 🏆\n\nEvent berlaku untuk semua member ABAD4D:\n\n📊 BET MIN 2.000 - PETIR BOLA X25 → BONUS 25.000\n📊 PETIR BOLA X50 → BONUS 50.000\n📊 PETIR BOLA X100 → BONUS 100.000\n📊 PETIR BOLA X1000 → BONUS 300.000\n\n*Event Reset 1 x 24 Waktu Pergantian Tanggal*\nBonus dapat di claim setiap hari!",
+            "image_url": "https://the.splg.site/images/2026/04/18/276_f2389761a5864c3fbd6ee9efb61aa686.webp",
+            "button_text": "🏆 Lihat Detail",
+            "button_url": "https://siteq.link/abad4d"
+        },
+        {
+            "id": 5,
+            "title": "🎲 EVENT SLOT GACOR HARI INI",
+            "message": "🎲 *EVENT SLOT GACOR HARI INI* 🎲\n\n⭐ Game slot dengan RTP tertinggi hari ini:\n\n1. *Gates of Olympus* - RTP 97.5%\n2. *Sweet Bonanza* - RTP 96.8%\n3. *Starlight Princess* - RTP 96.5%\n\n*Event spesial:*\nMain di jam 19.00-21.00 dapat bonus rollingan 1%!\n\nSelamat bermain dan semoga jackpot!",
+            "image_url": "https://the.splg.site/images/2026/04/18/ABG1.jpeg",
+            "button_text": "🎲 Main Sekarang",
+            "button_url": "https://siteq.link/abad4d"
+        }
+    ],
+    "settings": {
+        "broadcast_interval_hours": 1,
+        "random_order": true,
+        "send_image": true
+    }
+}
