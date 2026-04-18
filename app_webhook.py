@@ -8,12 +8,11 @@ from flask import Flask, render_template, request, jsonify
 import requests
 
 # ========== KONFIGURASI ==========
-TOKEN = "8501043849:AAH8Xm31iGQd-XrGZnduLI9ll5YEzintEOg"  # GANTI DENGAN TOKEN ASLI
+TOKEN = "8561643849:AABXxn31i0qd-Xz0ZnduL18115YEziEt8g"  # GANTI DENGAN TOKEN ASLI
 ADMIN_ID = 7176181382  # GANTI DENGAN ID TELEGRAM KAMU
 # =================================
 
 app = Flask(__name__)
-app.secret_key = "s4r4h4n4kunC1k4l1s4j4tuh4n34y4h"
 
 # Load data files
 DATA_FILE = "users.json"
@@ -25,7 +24,7 @@ def load_users():
         with open(DATA_FILE, "r") as f:
             return set(json.load(f))
     except:
-            return set()
+        return set()
 
 def save_users(users):
     with open(DATA_FILE, "w") as f:
@@ -44,7 +43,7 @@ def load_config():
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
-        return {"welcome_message": "Selamat datang!", "website_url": "https://siteq.link/abad4d"}
+        return {"welcome_message": "Selamat datang di Abad4D Bot!", "website_url": "https://siteq.link/abad4d"}
 
 def save_promos(promos, settings):
     with open(PROMO_FILE, "w", encoding="utf-8") as f:
@@ -59,7 +58,8 @@ promos, promo_settings = load_promos()
 config = load_config()
 
 # ============ TELEGRAM FUNCTIONS ============
-def send_telegram_message(chat_id, text, photo_url=None, button_text=None, button_url=None):
+def send_telegram_message(chat_id, text, photo_url=None, button_text=None, button_url=None, reply_markup=None):
+    """Kirim pesan ke Telegram"""
     if photo_url and promo_settings.get("send_image", True):
         url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
         payload = {
@@ -81,11 +81,14 @@ def send_telegram_message(chat_id, text, photo_url=None, button_text=None, butto
             "inline_keyboard": [[{"text": button_text, "url": button_url}]]
         })
     
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    
     try:
         response = requests.post(url, json=payload, timeout=30)
         return response.json()
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error send: {e}")
         return None
 
 def broadcast_promo():
@@ -110,18 +113,35 @@ def broadcast_promo():
             success += 1
         time.sleep(0.05)
     
-    print(f"[{datetime.now()}] Broadcast: {success} terkirim")
+    print(f"[{datetime.now()}] Broadcast: {success} terkirim dari {len(users_list)} user")
 
 def broadcast_loop():
     """Loop untuk broadcast setiap jam"""
+    print("🔄 Broadcast loop dimulai...")
+    last_broadcast = 0
+    
     while True:
-        time.sleep(3600)  # 1 jam
-        broadcast_promo()
+        now = time.time()
+        interval = promo_settings.get("broadcast_interval_hours", 1) * 3600
+        
+        if now - last_broadcast >= interval:
+            print(f"[{datetime.now()}] Memulai broadcast otomatis...")
+            broadcast_promo()
+            last_broadcast = now
+        
+        time.sleep(60)  # Cek setiap menit
 
 # ============ FLASK ROUTES ============
 @app.route('/')
+def home():
+    return "🤖 Abad4D Bot is running!"
+
+@app.route('/admin')
 def admin_panel():
-    return render_template('admin.html')
+    try:
+        return render_template('admin.html')
+    except:
+        return "Admin panel template not found"
 
 @app.route('/api/stats')
 def api_stats():
@@ -130,7 +150,9 @@ def api_stats():
         'total_promos': len(promos),
         'broadcast_interval': promo_settings.get('broadcast_interval_hours', 1),
         'random_order': promo_settings.get('random_order', True),
-        'send_image': promo_settings.get('send_image', True)
+        'send_image': promo_settings.get('send_image', True),
+        'website_url': config.get('website_url'),
+        'welcome_message': config.get('welcome_message')
     })
 
 @app.route('/api/promos')
@@ -231,40 +253,38 @@ def api_broadcast_promo(promo_id):
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
-    """Endpoint untuk webhook Telegram"""
-    data = request.get_json()
-    if data and "message" in data:
-        chat_id = data["message"]["chat"]["id"]
-        text = data["message"].get("text", "")
-        username = data["message"]["chat"].get("username", "unknown")
+    """Endpoint untuk menerima pesan dari Telegram"""
+    try:
+        data = request.get_json()
+        print(f"Webhook received: {data}")
         
-        # Simpan user baru
-        current_users = load_users()
-        if chat_id not in current_users:
-            current_users.add(chat_id)
-            save_users(current_users)
-            print(f"User baru: {username} ({chat_id})")
-        
-        # Handle perintah
-        if text == "/start":
-            keyboard = {
-                "inline_keyboard": [
-                    [{"text": "🌐 Kunjungi Website", "url": config.get("website_url")}],
-                    [{"text": "🎰 Lihat Semua Promo", "callback_data": "list_promos"}]
-                ]
-            }
-            send_telegram_message(chat_id, config.get("welcome_message"), None, None, None)
-            # Kirim keyboard terpisah
-            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": "👇 Pilih menu di bawah:",
-                "reply_markup": json.dumps(keyboard)
-            }
-            requests.post(url, json=payload)
+        if data and "message" in data:
+            chat_id = data["message"]["chat"]["id"]
+            text = data["message"].get("text", "")
+            username = data["message"]["chat"].get("username", "unknown")
             
-        elif text == "/help":
-            help_text = """
+            # Simpan user baru
+            current_users = load_users()
+            if chat_id not in current_users:
+                current_users.add(chat_id)
+                save_users(current_users)
+                print(f"User baru: {username} ({chat_id})")
+            
+            # Handle perintah
+            if text == "/start":
+                welcome_msg = config.get("welcome_message", "Selamat datang di Abad4D Bot!")
+                
+                # Keyboard dengan tombol
+                keyboard = {
+                    "inline_keyboard": [
+                        [{"text": "🌐 Kunjungi Website", "url": config.get("website_url")}],
+                        [{"text": "🎰 Lihat Semua Promo", "callback_data": "list_promos"}]
+                    ]
+                }
+                send_telegram_message(chat_id, welcome_msg, reply_markup=keyboard)
+                
+            elif text == "/help":
+                help_msg = """
 📖 *Panduan Bot Abad4D*
 
 /start - Memulai bot dan daftar promo
@@ -276,70 +296,104 @@ def webhook():
 🎁 Bonus New Member 50%
 💰 Cashback Mingguan 1%
 """
-            send_telegram_message(chat_id, help_text)
-            
-        elif text == "/promos":
-            if not promos:
-                send_telegram_message(chat_id, "Belum ada promo tersedia.")
-            else:
-                msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
-                for i, p in enumerate(promos, 1):
-                    msg += f"{i}. {p['title']}\n"
-                msg += "\nKetik /promo <nomor> untuk detail"
-                send_telegram_message(chat_id, msg)
+                send_telegram_message(chat_id, help_msg)
                 
-        elif text.startswith("/promo"):
-            try:
-                num = int(text.split()[1]) - 1
-                if 0 <= num < len(promos):
-                    p = promos[num]
-                    send_telegram_message(
-                        chat_id,
-                        p['message'],
-                        p.get('image_url'),
-                        p.get('button_text'),
-                        p.get('button_url')
-                    )
+            elif text == "/promos":
+                if not promos:
+                    send_telegram_message(chat_id, "Belum ada promo tersedia.")
                 else:
-                    send_telegram_message(chat_id, "Nomor promo tidak ditemukan")
-            except:
-                send_telegram_message(chat_id, "Gunakan: /promo <nomor>")
+                    msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
+                    for i, p in enumerate(promos, 1):
+                        msg += f"{i}. {p['title']}\n"
+                    msg += "\nKetik /promo <nomor> untuk detail"
+                    send_telegram_message(chat_id, msg)
+                    
+            elif text.startswith("/promo"):
+                try:
+                    num = int(text.split()[1]) - 1
+                    if 0 <= num < len(promos):
+                        p = promos[num]
+                        send_telegram_message(
+                            chat_id,
+                            p['message'],
+                            p.get('image_url'),
+                            p.get('button_text'),
+                            p.get('button_url')
+                        )
+                    else:
+                        send_telegram_message(chat_id, "Nomor promo tidak ditemukan")
+                except:
+                    send_telegram_message(chat_id, "Gunakan: /promo <nomor>")
+                    
+            elif text == "/stats" and str(chat_id) == str(ADMIN_ID):
+                total_users = len(load_users())
+                send_telegram_message(chat_id, f"📊 *Statistik Bot*\n\n👥 Total user: {total_users}\n🎁 Total promo: {len(promos)}")
                 
-        elif text == "/stats" and chat_id == ADMIN_ID:
-            total_users = len(load_users())
-            send_telegram_message(chat_id, f"📊 *Statistik Bot*\n\n👥 Total user: {total_users}\n🎁 Total promo: {len(promos)}")
-            
-        elif text.startswith("/broadcast") and chat_id == ADMIN_ID:
-            msg = text.replace("/broadcast", "").strip()
-            if msg:
-                send_telegram_message(chat_id, "⏳ Mengirim broadcast...")
-                users_list = load_users()
-                sent = 0
-                for uid in users_list:
-                    send_telegram_message(uid, msg)
-                    sent += 1
-                    time.sleep(0.05)
-                send_telegram_message(chat_id, f"✅ Broadcast selesai! Terkirim ke {sent} user")
+            elif text.startswith("/broadcast") and str(chat_id) == str(ADMIN_ID):
+                msg = text.replace("/broadcast", "").strip()
+                if msg:
+                    send_telegram_message(chat_id, "⏳ Mengirim broadcast...")
+                    users_list = load_users()
+                    sent = 0
+                    for uid in users_list:
+                        send_telegram_message(uid, msg)
+                        sent += 1
+                        time.sleep(0.05)
+                    send_telegram_message(chat_id, f"✅ Broadcast selesai! Terkirim ke {sent} user")
+                else:
+                    send_telegram_message(chat_id, "Gunakan: /broadcast <pesan>")
             else:
-                send_telegram_message(chat_id, "Gunakan: /broadcast <pesan>")
-        else:
-            send_telegram_message(chat_id, "🤖 Kirim /start untuk memulai")
-    
-    return jsonify({"status": "ok"})
+                send_telegram_message(chat_id, "🤖 Kirim /start untuk memulai")
+        
+        # Handle callback query (tombol inline)
+        elif data and "callback_query" in data:
+            callback_data = data["callback_query"]["data"]
+            chat_id = data["callback_query"]["message"]["chat"]["id"]
+            message_id = data["callback_query"]["message"]["message_id"]
+            
+            if callback_data == "list_promos":
+                if not promos:
+                    send_telegram_message(chat_id, "Belum ada promo tersedia.")
+                else:
+                    msg = "*📋 DAFTAR PROMO ABAD4D*\n\n"
+                    for i, p in enumerate(promos, 1):
+                        msg += f"{i}. {p['title']}\n"
+                    msg += "\nKetik /promo <nomor> untuk detail"
+                    send_telegram_message(chat_id, msg)
+            
+            # Answer callback query (hilangkan loading)
+            url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
+            requests.post(url, json={"callback_query_id": data["callback_query"]["id"]})
+        
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/set_webhook')
 def set_webhook():
     """Endpoint untuk mengatur webhook"""
     render_url = os.environ.get('RENDER_EXTERNAL_URL', request.host_url)
-    webhook_url = f"{render_url}webhook"
+    if render_url.endswith('/'):
+        render_url = render_url[:-1]
+    webhook_url = f"{render_url}/webhook"
     
     url = f"https://api.telegram.org/bot{TOKEN}/setWebhook"
     response = requests.post(url, json={"url": webhook_url})
+    result = response.json()
     
-    if response.json().get("ok"):
-        return f"✅ Webhook berhasil diatur!<br><br>URL: {webhook_url}"
+    if result.get("ok"):
+        return f"""
+        <h2>✅ Webhook Berhasil Diatur!</h2>
+        <p>URL Webhook: <code>{webhook_url}</code></p>
+        <p>Response: <pre>{json.dumps(result, indent=2)}</pre></p>
+        <p>Sekarang coba kirim <code>/start</code> ke bot di Telegram.</p>
+        """
     else:
-        return f"❌ Gagal: {response.text}"
+        return f"""
+        <h2>❌ Gagal Mengatur Webhook</h2>
+        <p>Error: {result}</p>
+        """
 
 @app.route('/health')
 def health():
@@ -355,8 +409,9 @@ if __name__ == "__main__":
     print("=" * 50)
     print("🤖 ABAD4D BOT TELEGRAM")
     print("=" * 50)
-    print(f"🌐 Admin Panel: http://localhost:{port}")
+    print(f"🌐 Server running on port {port}")
     print(f"📡 Kunjungi /set_webhook untuk mengaktifkan webhook")
+    print(f"🔄 Broadcast loop: AKTIF (setiap {promo_settings.get('broadcast_interval_hours', 1)} jam)")
     print("=" * 50)
     
     app.run(host="0.0.0.0", port=port)
