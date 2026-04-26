@@ -12,8 +12,8 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 import threading
 
 # ========== KONFIGURASI ==========
-TOKEN = "4454465:AAHTR0awcVGQROy0iX3lmdtPGbxo8HCaW5U"
-ADMIN_ID = 654465654
+TOKEN = "8501043849:AAH8Xm31iGQd-XrGZnduLI9ll5YEzintEOg"
+ADMIN_ID = 7176181382
 ADMIN_PASSWORD_HASH = hashlib.sha256("Abad4D225511".encode()).hexdigest()  # Password: Abad4D225511
 # =================================
 
