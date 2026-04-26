@@ -321,7 +321,7 @@ def process_updates():
             response = requests.get(url, params={
                 "offset": last_update_id + 1,
                 "timeout": 30,
-                "allowed_updates": json.dumps(["message", "callback_query"])
+                "allowed_updates": ["message", "callback_query"]
             }, timeout=35)
             
             if response.status_code == 200:
@@ -542,21 +542,60 @@ Bot akan mengirim promo menarik setiap 20 menit!"""
 
 # ============ FLASK ROUTES ============
 @app.route('/')
-def home():
+def index():
     return """
     <html>
-    <head><title>Abad4D Bot</title></head>
-    <body style="font-family: Arial; text-align: center; padding: 50px;">
-        <h1>🤖 Abad4D Bot is Running!</h1>
-        <p style="color: green; font-size: 20px;">✅ BOT AKTIF!</p>
-        <p>Mode: <strong>Polling (tanpa webhook)</strong></p>
-        <p>⏰ Broadcast setiap 20 menit</p>
-        <p>📞 Fitur Share Kontak: <strong>AKTIF</strong></p>
-        <hr>
-        <p>📱 Coba kirim <code>/start</code> ke bot di Telegram</p>
-        <p>📊 <a href="/api/broadcast_status">Cek Status Broadcast</a></p>
-        <p>📞 <a href="/api/contacts">Lihat Kontak</a></p>
-        <p>👥 <a href="/api/users">Lihat User</a></p>
+    <head>
+        <title>Abad4D Bot</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; margin: 0; }
+            .container { background: white; border-radius: 20px; padding: 40px; max-width: 800px; margin: 0 auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+            h1 { color: #764ba2; margin-bottom: 10px; }
+            .status { color: #28a745; font-size: 20px; font-weight: bold; margin: 20px 0; }
+            .info { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: left; }
+            .info h3 { color: #333; margin-top: 0; }
+            .api-links { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 20px; }
+            .api-link { background: #764ba2; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; transition: 0.3s; }
+            .api-link:hover { background: #5a3a8a; transform: translateY(-2px); }
+            .footer { margin-top: 30px; color: #666; font-size: 12px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🤖 ABAD4D BOT TELEGRAM</h1>
+            <div class="status">✅ BOT AKTIF!</div>
+            <p>Mode: <strong>Polling (tanpa webhook)</strong></p>
+            <p>⏰ Broadcast setiap 20 menit</p>
+            <p>📞 Fitur Share Kontak: <strong>AKTIF</strong></p>
+            
+            <div class="info">
+                <h3>📋 Perintah Telegram:</h3>
+                <p><code>/start</code> - Menu utama</p>
+                <p><code>/share</code> - Share kontak</p>
+                <p><code>/promos</code> - Lihat promo</p>
+                <p><code>/help</code> - Bantuan</p>
+                <hr>
+                <h3>🔐 Perintah Admin:</h3>
+                <p><code>/status</code> - Status bot</p>
+                <p><code>/contacts</code> - Lihat kontak</p>
+                <p><code>/export_contacts</code> - Export kontak</p>
+            </div>
+            
+            <div class="api-links">
+                <a href="/api/broadcast_status" class="api-link">📊 Status Broadcast</a>
+                <a href="/api/contacts" class="api-link">📞 Lihat Kontak</a>
+                <a href="/api/users" class="api-link">👥 Lihat User</a>
+                <a href="/api/promos" class="api-link">🎁 Lihat Promo</a>
+                <a href="/api/stats" class="api-link">📈 Statistik</a>
+            </div>
+            
+            <div class="footer">
+                <p>📱 Kirim <code>/start</code> ke bot di Telegram untuk mulai!</p>
+                <p>© 2024 Abad4D Bot</p>
+            </div>
+        </div>
     </body>
     </html>
     """
@@ -622,7 +661,9 @@ def api_stats():
         'total_promos': len(promos),
         'total_contacts': get_contact_count(),
         'broadcast_interval': promo_settings.get('broadcast_interval_minutes', 20),
-        'website_url': config.get('website_url')
+        'website_url': config.get('website_url'),
+        'bot_status': 'active',
+        'mode': 'polling'
     })
 
 @app.route('/api/promos')
@@ -671,6 +712,29 @@ if __name__ == "__main__":
         with open(DATA_FILE, "w") as f:
             json.dump([], f)
         print("✅ File users.json dibuat")
+    
+    if not os.path.exists(PROMO_FILE):
+        # Buat promo default jika belum ada
+        default_promos = {
+            "promos": [
+                {
+                    "id": 1,
+                    "title": "🔥 NEW MEMBER BONUS 20% 🔥",
+                    "message": "🎁 Dapatkan BONUS 20% untuk member baru!",
+                    "image_url": "",
+                    "button_text": "🔥 Klaim Sekarang",
+                    "button_url": "https://siteq.link/abad4d"
+                }
+            ],
+            "settings": {
+                "broadcast_interval_minutes": 20,
+                "random_order": True,
+                "send_image": True
+            }
+        }
+        with open(PROMO_FILE, "w", encoding="utf-8") as f:
+            json.dump(default_promos, f, indent=4, ensure_ascii=False)
+        print("✅ File promo.json dibuat")
     
     # Start broadcast thread
     broadcast_thread = threading.Thread(target=broadcast_loop, daemon=True)
