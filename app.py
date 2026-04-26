@@ -15,7 +15,7 @@ ADMIN_ID = 7176181382
 app = Flask(__name__)
 app.secret_key = "s4r4h4n4kunC1k4l1s4j4tuh4n34y4h"
 
-# File untuk menyimpan kontak
+# File untuk menyimpan data
 CONTACTS_FILE = "contacts.json"
 DATA_FILE = "users.json"
 PROMO_FILE = "promo.json"
@@ -29,6 +29,10 @@ broadcast_status = {
     "total_broadcasts_sent": 0,
     "is_running": True
 }
+
+# Variabel global
+last_update_id = 0
+is_polling = True
 
 # ============ FUNGSI LOAD DATA ============
 def load_users():
@@ -61,7 +65,7 @@ def load_config():
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     except:
-        return {"welcome_message": "🌟 SELAMAT DATANG DI ABAD4D OFFICIAL 🌟\n\n🔥 PROMO SPESIAL UNTUK ANDA! 🔥\n\n👇 Klik tombol di bawah untuk mulai bermain", "website_url": "https://siteq.link/abad4d"}
+        return {"welcome_message": "🌟 SELAMAT DATANG DI ABAD4D OFFICIAL 🌟\n\n👇 Klik tombol di bawah untuk mulai bermain", "website_url": "https://siteq.link/abad4d"}
 
 def save_promos(promos, settings):
     with open(PROMO_FILE, "w", encoding="utf-8") as f:
@@ -132,31 +136,31 @@ def get_contact_count():
 # ============ TELEGRAM FUNCTIONS ============
 def send_telegram_message(chat_id, text, photo_url=None, button_text=None, button_url=None, reply_markup=None):
     """Kirim pesan ke Telegram"""
-    if photo_url and promo_settings.get("send_image", True):
-        url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
-        payload = {
-            "chat_id": chat_id,
-            "photo": photo_url,
-            "caption": text,
-            "parse_mode": "Markdown"
-        }
-    else:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown"
-        }
-    
-    if button_text and button_url:
-        payload["reply_markup"] = json.dumps({
-            "inline_keyboard": [[{"text": button_text, "url": button_url}]]
-        })
-    
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-    
     try:
+        if photo_url and promo_settings.get("send_image", True):
+            url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+            payload = {
+                "chat_id": chat_id,
+                "photo": photo_url,
+                "caption": text,
+                "parse_mode": "Markdown"
+            }
+        else:
+            url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+            payload = {
+                "chat_id": chat_id,
+                "text": text,
+                "parse_mode": "Markdown"
+            }
+        
+        if button_text and button_url:
+            payload["reply_markup"] = json.dumps({
+                "inline_keyboard": [[{"text": button_text, "url": button_url}]]
+            })
+        
+        if reply_markup:
+            payload["reply_markup"] = json.dumps(reply_markup)
+        
         response = requests.post(url, json=payload, timeout=30)
         return response.json()
     except Exception as e:
@@ -227,7 +231,7 @@ Dengan membagikan nomor telepon, Anda akan mendapatkan update promo terbaru dan 
     try:
         requests.post(url, json=payload, timeout=30)
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error send contact request: {e}")
 
 def broadcast_promo():
     global broadcast_status
@@ -280,41 +284,44 @@ def broadcast_loop():
     print("🔄 [LOOP] Broadcast loop dimulai...")
     last_broadcast = 0
     
-    while True:
-        now = time.time()
-        interval_minutes = promo_settings.get("broadcast_interval_minutes", 20)
-        interval_seconds = interval_minutes * 60
-        
-        if last_broadcast == 0:
-            print(f"⏰ [LOOP] Broadcast pertama akan dimulai dalam {interval_minutes} menit")
-            broadcast_status["next_broadcast_in"] = interval_seconds
-        
-        if now - last_broadcast >= interval_seconds:
-            print(f"\n🚀 [LOOP] Trigger broadcast pada {datetime.now().strftime('%H:%M:%S')}")
-            broadcast_promo()
-            last_broadcast = now
-            broadcast_status["next_broadcast_in"] = interval_seconds
-        else:
-            remaining = int(interval_seconds - (now - last_broadcast))
-            broadcast_status["next_broadcast_in"] = remaining
-        
-        time.sleep(30)
+    while is_polling:
+        try:
+            now = time.time()
+            interval_minutes = promo_settings.get("broadcast_interval_minutes", 20)
+            interval_seconds = interval_minutes * 60
+            
+            if last_broadcast == 0:
+                print(f"⏰ [LOOP] Broadcast pertama akan dimulai dalam {interval_minutes} menit")
+                broadcast_status["next_broadcast_in"] = interval_seconds
+            
+            if now - last_broadcast >= interval_seconds:
+                print(f"\n🚀 [LOOP] Trigger broadcast pada {datetime.now().strftime('%H:%M:%S')}")
+                broadcast_promo()
+                last_broadcast = now
+                broadcast_status["next_broadcast_in"] = interval_seconds
+            else:
+                remaining = int(interval_seconds - (now - last_broadcast))
+                broadcast_status["next_broadcast_in"] = remaining
+            
+            time.sleep(30)
+        except Exception as e:
+            print(f"❌ Broadcast loop error: {e}")
+            time.sleep(60)
 
 # ============ PROSES UPDATE DARI TELEGRAM (POLLING) ============
-last_update_id = 0
-
 def process_updates():
     """Proses update dari Telegram dengan metode polling (tanpa webhook)"""
-    global last_update_id
+    global last_update_id, is_polling
     
     print("🔄 Memulai polling ke Telegram API...")
     
-    while True:
+    while is_polling:
         try:
             url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
             response = requests.get(url, params={
                 "offset": last_update_id + 1,
-                "timeout": 30
+                "timeout": 30,
+                "allowed_updates": json.dumps(["message", "callback_query"])
             }, timeout=35)
             
             if response.status_code == 200:
@@ -338,7 +345,7 @@ def process_updates():
                             if chat_id not in current_users:
                                 current_users.add(chat_id)
                                 save_users(current_users)
-                                print(f"📝 User baru: {username} ({chat_id})")
+                                print(f"📝 User baru: @{username} ({chat_id}) - Total: {len(current_users)}")
                             
                             # Cek apakah ada kontak yang dishare
                             contact = message.get("contact")
@@ -367,6 +374,7 @@ Member yang sudah share kontak berhak mendapatkan bonus special!
                                 admin_msg = f"""📞 *KONTAK BARU!*
 
 👤 Nama: {first_name} {last_name}
+🆔 Username: @{username if username != 'unknown' else '-'}
 📱 Nomor: {phone_number}
 🕐 Waktu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 📊 Total Kontak: {get_contact_count()}
@@ -378,20 +386,22 @@ Member yang sudah share kontak berhak mendapatkan bonus special!
                                 url_remove = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
                                 requests.post(url_remove, json={
                                     "chat_id": chat_id,
-                                    "text": "Ketik /start untuk kembali",
+                                    "text": "Ketik /start untuk kembali ke menu utama",
                                     "reply_markup": json.dumps(remove_keyboard)
                                 })
                             
                             # Handle perintah teks
                             elif text == "/start":
                                 send_main_menu(chat_id)
-                                print(f"📨 Menu sent to {username}")
+                                print(f"📨 Menu sent to @{username}")
                             
                             elif text == "/share":
                                 send_contact_request(chat_id)
+                                print(f"📨 Share contact request sent to @{username}")
                             
                             elif text == "/promos":
                                 send_promo_list(chat_id)
+                                print(f"📨 Promo list sent to @{username}")
                             
                             elif text == "/help":
                                 help_msg = """📖 *Panduan Bot Abad4D*
@@ -401,7 +411,7 @@ Member yang sudah share kontak berhak mendapatkan bonus special!
 /promos - Lihat daftar promo
 /share - Share kontak Anda
 
-*Fitur Baru:*
+*Fitur:*
 ✅ Share kontak untuk dapat bonus
 ✅ Update promo via WhatsApp
 ✅ Notifikasi event khusus
@@ -423,6 +433,7 @@ Member yang sudah share kontak berhak mendapatkan bonus special!
 🎁 Total promo: {len(promos)}
 ⏱️ Interval: {promo_settings.get('broadcast_interval_minutes', 20)} menit"""
                                 send_telegram_message(chat_id, status_msg)
+                                print(f"📊 Status sent to admin @{username}")
                             
                             elif text == "/contacts" and str(chat_id) == str(ADMIN_ID):
                                 contacts = get_all_contacts()
@@ -430,10 +441,39 @@ Member yang sudah share kontak berhak mendapatkan bonus special!
                                     msg = "*📞 DAFTAR KONTAK*\n\n"
                                     for i, c in enumerate(contacts[-10:], 1):
                                         msg += f"{i}. {c.get('full_name', '-')} - {c.get('phone_number', '-')}\n"
-                                    msg += f"\n📊 Total: {len(contacts)} kontak"
+                                    msg += f"\n📊 Total: {len(contacts)} kontak\n\nGunakan /export_contacts untuk export semua"
                                     send_telegram_message(chat_id, msg)
                                 else:
+                                    send_telegram_message(chat_id, "Belum ada kontak yang tersimpan.")
+                            
+                            elif text == "/export_contacts" and str(chat_id) == str(ADMIN_ID):
+                                contacts = get_all_contacts()
+                                if contacts:
+                                    msg = "📞 *EXPORT KONTAK*\n\n"
+                                    for c in contacts:
+                                        msg += f"👤 {c.get('full_name', '-')} | 📱 {c.get('phone_number', '-')}\n"
+                                    
+                                    if len(msg) > 4000:
+                                        for i in range(0, len(msg), 4000):
+                                            send_telegram_message(chat_id, msg[i:i+4000])
+                                    else:
+                                        send_telegram_message(chat_id, msg)
+                                else:
                                     send_telegram_message(chat_id, "Belum ada kontak.")
+                            
+                            elif text.startswith("/broadcast") and str(chat_id) == str(ADMIN_ID):
+                                msg = text.replace("/broadcast", "").strip()
+                                if msg:
+                                    send_telegram_message(chat_id, "⏳ Mengirim broadcast...")
+                                    users_list = list(load_users())
+                                    sent = 0
+                                    for uid in users_list:
+                                        send_telegram_message(uid, msg)
+                                        sent += 1
+                                        time.sleep(0.05)
+                                    send_telegram_message(chat_id, f"✅ Broadcast selesai! Terkirim ke {sent} user")
+                                else:
+                                    send_telegram_message(chat_id, "Gunakan: /broadcast <pesan>")
                             
                             else:
                                 send_main_menu(chat_id)
@@ -488,7 +528,8 @@ Bot akan mengirim promo menarik setiap 20 menit!"""
                                     else:
                                         send_telegram_message(chat_id, "Promo tidak ditemukan.")
                                 except Exception as e:
-                                    print(f"Error: {e}")
+                                    print(f"Error promo callback: {e}")
+                                    send_telegram_message(chat_id, "Terjadi kesalahan. Silakan coba lagi.")
                             
                             # Answer callback query
                             url_answer = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
@@ -515,6 +556,7 @@ def home():
         <p>📱 Coba kirim <code>/start</code> ke bot di Telegram</p>
         <p>📊 <a href="/api/broadcast_status">Cek Status Broadcast</a></p>
         <p>📞 <a href="/api/contacts">Lihat Kontak</a></p>
+        <p>👥 <a href="/api/users">Lihat User</a></p>
     </body>
     </html>
     """
@@ -569,6 +611,10 @@ def api_export_contacts():
         'Content-Disposition': 'attachment; filename=contacts.csv'
     }
 
+@app.route('/api/users')
+def api_get_users():
+    return jsonify(list(load_users()))
+
 @app.route('/api/stats')
 def api_stats():
     return jsonify({
@@ -596,6 +642,7 @@ if __name__ == "__main__":
         if response.status_code == 200 and response.json().get("ok"):
             bot_info = response.json().get("result")
             print(f"✅ Bot terhubung: @{bot_info.get('username')}")
+            print(f"🆔 Bot ID: {bot_info.get('id')}")
         else:
             print(f"❌ Token tidak valid! Periksa TOKEN Anda.")
             exit(1)
@@ -609,28 +656,40 @@ if __name__ == "__main__":
         response = requests.post(url, json={"drop_pending_updates": True}, timeout=10)
         if response.json().get("ok"):
             print("✅ Webhook berhasil dihapus")
-    except:
-        pass
+        else:
+            print("⚠️ Gagal hapus webhook, lanjut polling...")
+    except Exception as e:
+        print(f"⚠️ Error delete webhook: {e}")
     
     # Inisialisasi file
     if not os.path.exists(CONTACTS_FILE):
         with open(CONTACTS_FILE, "w") as f:
             json.dump([], f)
+        print("✅ File contacts.json dibuat")
+    
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "w") as f:
+            json.dump([], f)
+        print("✅ File users.json dibuat")
     
     # Start broadcast thread
     broadcast_thread = threading.Thread(target=broadcast_loop, daemon=True)
     broadcast_thread.start()
+    print("✅ Broadcast thread started")
     
     # Start polling thread
     polling_thread = threading.Thread(target=process_updates, daemon=True)
     polling_thread.start()
+    print("✅ Polling thread started")
     
     print(f"\n✅ Bot siap menerima pesan!")
     print(f"📞 Fitur Share Kontak: AKTIF")
     print(f"🔄 Broadcast: setiap {promo_settings.get('broadcast_interval_minutes', 20)} menit")
+    print(f"👥 Total User tersimpan: {len(load_users())}")
+    print(f"📞 Total Kontak tersimpan: {get_contact_count()}")
     print(f"\n📱 Kirim /start ke bot di Telegram untuk test")
     print("=" * 60)
     
     # Jalankan Flask server
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
