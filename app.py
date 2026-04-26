@@ -15,6 +15,9 @@ ADMIN_ID = 7176181382
 app = Flask(__name__)
 app.secret_key = "s4r4h4n4kunC1k4l1s4j4tuh4n34y4h"
 
+# File untuk menyimpan kontak
+CONTACTS_FILE = "contacts.json"
+
 # Variabel untuk tracking broadcast
 broadcast_status = {
     "last_broadcast_time": None,
@@ -68,13 +71,63 @@ def save_config(config):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
-users = load_users()
-promos, promo_settings = load_promos()
-config = load_config()
+# ============ FUNGSI UNTUK MENYIMPAN KONTAK ============
+def save_contact(user_id, username, first_name, last_name, phone_number):
+    """Menyimpan kontak user ke file JSON"""
+    try:
+        contacts = []
+        if os.path.exists(CONTACTS_FILE):
+            with open(CONTACTS_FILE, "r", encoding="utf-8") as f:
+                contacts = json.load(f)
+        
+        # Cek apakah user sudah pernah share kontak sebelumnya
+        existing_index = None
+        for i, contact in enumerate(contacts):
+            if contact.get("user_id") == user_id:
+                existing_index = i
+                break
+        
+        new_contact = {
+            "user_id": user_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name or "",
+            "full_name": f"{first_name} {last_name or ''}".strip(),
+            "phone_number": phone_number,
+            "shared_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "is_verified": True
+        }
+        
+        if existing_index is not None:
+            # Update kontak yang sudah ada
+            contacts[existing_index] = new_contact
+            print(f"📞 [UPDATE] Kontak user {first_name} ({user_id}) diperbarui")
+        else:
+            # Tambah kontak baru
+            contacts.append(new_contact)
+            print(f"📞 [NEW] Kontak baru dari {first_name} ({user_id}) - {phone_number}")
+        
+        with open(CONTACTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(contacts, f, indent=2, ensure_ascii=False)
+        
+        return True
+    except Exception as e:
+        print(f"❌ Error saving contact: {e}")
+        return False
 
-print(f"✅ Loaded {len(promos)} promos")
-print(f"⏰ Broadcast interval: {promo_settings.get('broadcast_interval_minutes', 20)} minutes")
-print(f"👥 Total users: {len(users)}")
+def get_all_contacts():
+    """Mengambil semua kontak yang tersimpan"""
+    try:
+        if os.path.exists(CONTACTS_FILE):
+            with open(CONTACTS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except:
+        pass
+    return []
+
+def get_contact_count():
+    """Menghitung jumlah kontak"""
+    return len(get_all_contacts())
 
 # ============ TELEGRAM FUNCTIONS ============
 def send_telegram_message(chat_id, text, photo_url=None, button_text=None, button_url=None, reply_markup=None):
@@ -116,35 +169,59 @@ def send_promo_list(chat_id):
         return
     
     # Buat keyboard dengan tombol untuk setiap promo
-    # Setiap baris berisi 2 tombol (biar tidak terlalu panjang)
     keyboard = []
     row = []
     for i, promo in enumerate(promos, 1):
         row.append({"text": f"{i}. {promo['title'][:20]}", "callback_data": f"promo_{promo['id']}"})
-        if len(row) == 2:  # 2 tombol per baris
+        if len(row) == 2:
             keyboard.append(row)
             row = []
-    if row:  # Sisa tombol
+    if row:
         keyboard.append(row)
     
-    # Tambah tombol kembali ke menu utama
     keyboard.append([{"text": "🔙 Kembali ke Menu", "callback_data": "back_to_menu"}])
     
     reply_markup = {"inline_keyboard": keyboard}
     send_telegram_message(chat_id, "*📋 DAFTAR PROMO ABAD4D*\n\nKlik promo yang ingin kamu lihat:", reply_markup=reply_markup)
 
 def send_main_menu(chat_id):
-    """Kirim menu utama dengan tombol"""
+    """Kirim menu utama dengan tombol share kontak"""
     welcome_msg = config.get("welcome_message", "Selamat datang di Abad4D Bot!")
     
+    # Buat tombol dengan request_contact (khusus untuk keyboard reply)
+    # Tapi karena kita pakai inline keyboard untuk menu, kita buat tombol share kontak terpisah
     keyboard = {
         "inline_keyboard": [
+            [{"text": "📞 Share Kontak Saya", "callback_data": "share_contact"}],
             [{"text": "🌐 Kunjungi Website", "url": config.get("website_url")}],
             [{"text": "🎰 Lihat Semua Promo", "callback_data": "list_promos"}],
             [{"text": "ℹ️ Bantuan", "callback_data": "help"}]
         ]
     }
     send_telegram_message(chat_id, welcome_msg, reply_markup=keyboard)
+
+def send_contact_request(chat_id):
+    """Mengirim tombol request contact (reply keyboard)"""
+    contact_keyboard = {
+        "keyboard": [
+            [{"text": "📱 Share Nomor Saya", "request_contact": True}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": True
+    }
+    
+    msg = """📞 *SHARE KONTAK ANDA*
+
+Dengan membagikan nomor telepon, Anda akan:
+✅ Mendapatkan update promo terbaru via WhatsApp (opsional)
+✅ Mendapatkan bonus special untuk member yang terverifikasi
+✅ Memudahkan CS kami untuk menghubungi Anda
+
+🔒 *Data Anda aman dan tidak akan disebarluaskan*
+
+👇 Tekan tombol di bawah untuk share kontak👇
+"""
+    send_telegram_message(chat_id, msg, reply_markup=contact_keyboard)
 
 def broadcast_promo():
     global broadcast_status
@@ -229,9 +306,11 @@ def home():
     <body style="font-family: Arial; text-align: center; padding: 50px;">
         <h1>🤖 Abad4D Bot is Running!</h1>
         <p>⏰ Broadcast setiap 20 menit</p>
+        <p>📞 <strong>Fitur Share Kontak AKTIF!</strong></p>
         <p>📊 <a href="/api/broadcast_status">Cek Status Broadcast</a></p>
         <p>📋 <a href="/api/promos">Lihat Promo</a></p>
         <p>👥 <a href="/api/users">Lihat User</a></p>
+        <p>📞 <a href="/api/contacts">Lihat Kontak</a></p>
         <p>📡 <a href="/set_webhook">Set Webhook</a></p>
     </body>
     </html>
@@ -244,6 +323,55 @@ def admin_panel():
     except Exception as e:
         return f"Error loading admin panel: {e}"
 
+# ============ API BARU UNTUK KONTAK ============
+@app.route('/api/contacts')
+def api_get_contacts():
+    """Mendapatkan semua kontak yang tersimpan"""
+    contacts = get_all_contacts()
+    return jsonify({
+        'total': len(contacts),
+        'contacts': contacts
+    })
+
+@app.route('/api/contacts/stats')
+def api_contacts_stats():
+    """Statistik kontak"""
+    contacts = get_all_contacts()
+    today = datetime.now().strftime("%Y-%m-%d")
+    today_contacts = [c for c in contacts if c.get('shared_at', '').startswith(today)]
+    
+    return jsonify({
+        'total_contacts': len(contacts),
+        'today_contacts': len(today_contacts),
+        'last_contact': contacts[-1] if contacts else None
+    })
+
+@app.route('/api/contacts/export')
+def api_export_contacts():
+    """Export semua kontak ke CSV"""
+    import csv
+    from io import StringIO
+    
+    contacts = get_all_contacts()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['User ID', 'Username', 'Nama Lengkap', 'Nomor Telepon', 'Tanggal Share'])
+    
+    for c in contacts:
+        writer.writerow([
+            c.get('user_id', ''),
+            c.get('username', ''),
+            c.get('full_name', ''),
+            c.get('phone_number', ''),
+            c.get('shared_at', '')
+        ])
+    
+    return output.getvalue(), 200, {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': 'attachment; filename=contacts.csv'
+    }
+
 @app.route('/api/broadcast_status')
 def api_broadcast_status():
     return jsonify({
@@ -253,7 +381,8 @@ def api_broadcast_status():
         'next_broadcast_in_seconds': broadcast_status.get("next_broadcast_in", 0),
         'next_broadcast_in_minutes': round(broadcast_status.get("next_broadcast_in", 0) / 60, 1),
         'total_broadcasts_sent': broadcast_status.get("total_broadcasts_sent", 0),
-        'interval_minutes': promo_settings.get('broadcast_interval_minutes', 20)
+        'interval_minutes': promo_settings.get('broadcast_interval_minutes', 20),
+        'total_contacts': get_contact_count()
     })
 
 @app.route('/api/stats')
@@ -261,6 +390,7 @@ def api_stats():
     return jsonify({
         'total_users': len(load_users()),
         'total_promos': len(promos),
+        'total_contacts': get_contact_count(),
         'broadcast_interval': promo_settings.get('broadcast_interval_minutes', 20),
         'random_order': promo_settings.get('random_order', True),
         'send_image': promo_settings.get('send_image', True),
@@ -343,6 +473,29 @@ def api_broadcast():
         time.sleep(0.05)
     return jsonify({'sent': success, 'total': len(users_list)})
 
+@app.route('/api/broadcast_to_contacts', methods=['POST'])
+def api_broadcast_to_contacts():
+    """Broadcast khusus ke user yang sudah share kontak"""
+    data = request.json
+    contacts = get_all_contacts()
+    
+    success = 0
+    for contact in contacts:
+        user_id = contact.get('user_id')
+        if user_id:
+            result = send_telegram_message(
+                user_id,
+                data.get('message'),
+                data.get('image_url'),
+                data.get('button_text'),
+                data.get('button_url')
+            )
+            if result and result.get('ok'):
+                success += 1
+            time.sleep(0.05)
+    
+    return jsonify({'sent': success, 'total': len(contacts)})
+
 @app.route('/api/broadcast_promo/<int:promo_id>', methods=['POST'])
 def api_broadcast_promo(promo_id):
     promo = next((p for p in promos if p.get('id') == promo_id), None)
@@ -374,13 +527,57 @@ def webhook():
             text = data["message"].get("text", "")
             username = data["message"]["chat"].get("username", "unknown")
             
+            # ============ CEK APAKAH ADA KONTAK ============
+            contact = data["message"].get("contact")
+            
             current_users = load_users()
             if chat_id not in current_users:
                 current_users.add(chat_id)
                 save_users(current_users)
                 print(f"📝 User baru: {username} ({chat_id}) - Total: {len(current_users)}")
             
-            if text == "/start":
+            # ============ HANDLE SHARE KONTAK ============
+            if contact:
+                phone_number = contact.get("phone_number")
+                first_name = contact.get("first_name", "")
+                last_name = contact.get("last_name", "")
+                user_id = contact.get("user_id", chat_id)
+                
+                # Simpan kontak
+                save_contact(user_id, username, first_name, last_name, phone_number)
+                
+                # Kirim konfirmasi ke user
+                confirm_msg = f"""✅ *TERIMA KASIH TELAH SHARE KONTAK!*
+
+Halo *{first_name}*, nomor Anda *{phone_number}* telah tersimpan.
+
+🎁 *BONUS UNTUK ANDA:*
+Member yang sudah share kontak berhak mendapatkan:
+• Bonus New Member 50%
+• Bonus Deposit Harian 10%
+• Event Giveaway bulanan
+
+💬 Customer Service kami akan menghubungi Anda via WhatsApp untuk info promo terbaru.
+
+🏠 Ketik /start untuk kembali ke menu utama
+"""
+                send_telegram_message(chat_id, confirm_msg)
+                
+                # Notifikasi ke admin
+                admin_msg = f"""📞 *KONTAK BARU!*
+
+👤 Nama: {first_name} {last_name}
+🆔 Username: @{username if username != 'unknown' else '-'}
+📱 Nomor: {phone_number}
+🕐 Waktu: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+📊 Total Kontak: {get_contact_count()}
+"""
+                send_telegram_message(ADMIN_ID, admin_msg)
+                
+                print(f"📞 [WEBHOOK] Kontak tersimpan dari {first_name} - Total kontak: {get_contact_count()}")
+                
+            # ============ HANDLE TEKS PERINTAH ============
+            elif text == "/start":
                 send_main_menu(chat_id)
                 print(f"📨 Menu sent to {username}")
                 
@@ -391,13 +588,19 @@ def webhook():
 /start - Menu utama
 /help - Panduan ini
 /promos - Lihat daftar promo
+/share - Share kontak Anda
 
 *Fitur Baru:*
-✅ Klik tombol promo langsung lihat detail
-✅ Broadcast promo setiap 20 menit otomatis
-✅ 8 Promo menarik dengan gambar
+✅ Share kontak untuk dapat bonus
+✅ Update promo via WhatsApp
+✅ Notifikasi event khusus
+
+🔒 *Data Anda aman dan terjaga kerahasiaannya*
 """
                 send_telegram_message(chat_id, help_msg)
+                
+            elif text == "/share":
+                send_contact_request(chat_id)
                 
             elif text == "/promos":
                 send_promo_list(chat_id)
@@ -406,6 +609,7 @@ def webhook():
                 remaining = broadcast_status.get("next_broadcast_in", 0)
                 remaining_min = int(remaining // 60)
                 remaining_sec = int(remaining % 60)
+                total_contacts = get_contact_count()
                 
                 status_msg = f"""
 📊 *STATUS BROADCAST*
@@ -416,6 +620,7 @@ def webhook():
 ⏰ Next broadcast: {remaining_min} menit {remaining_sec} detik
 📊 Total broadcast: {broadcast_status.get('total_broadcasts_sent', 0)} kali
 👥 Total user: {len(load_users())}
+📞 Total kontak: {total_contacts}
 🎁 Total promo: {len(promos)}
 ⏱️ Interval: {promo_settings.get('broadcast_interval_minutes', 20)} menit
 """
@@ -424,9 +629,37 @@ def webhook():
                 
             elif text == "/stats" and str(chat_id) == str(ADMIN_ID):
                 total_users = len(load_users())
+                total_contacts = get_contact_count()
                 interval = promo_settings.get('broadcast_interval_minutes', 20)
-                send_telegram_message(chat_id, f"📊 *Statistik Bot*\n\n👥 Total user: {total_users}\n🎁 Total promo: {len(promos)}\n⏰ Broadcast: setiap {interval} menit")
+                send_telegram_message(chat_id, f"📊 *Statistik Bot*\n\n👥 Total user: {total_users}\n📞 Total kontak: {total_contacts}\n🎁 Total promo: {len(promos)}\n⏰ Broadcast: setiap {interval} menit")
                 
+            elif text == "/contacts" and str(chat_id) == str(ADMIN_ID):
+                contacts = get_all_contacts()
+                if contacts:
+                    msg = "*📞 DAFTAR KONTAK YANG TERSIMPAN*\n\n"
+                    for i, c in enumerate(contacts[-10:], 1):  # 10 terakhir
+                        msg += f"{i}. {c.get('full_name', '-')} - {c.get('phone_number', '-')}\n"
+                    msg += f"\n📊 Total: {len(contacts)} kontak\n\n📌 Gunakan /export_contacts untuk export semua"
+                    send_telegram_message(chat_id, msg)
+                else:
+                    send_telegram_message(chat_id, "Belum ada kontak yang tersimpan.")
+                    
+            elif text == "/export_contacts" and str(chat_id) == str(ADMIN_ID):
+                contacts = get_all_contacts()
+                if contacts:
+                    msg = "📞 *EXPORT KONTAK*\n\n"
+                    for c in contacts:
+                        msg += f"👤 {c.get('full_name', '-')} | 📱 {c.get('phone_number', '-')}\n"
+                    
+                    if len(msg) > 4000:
+                        # Kirim per bagian
+                        for i in range(0, len(msg), 4000):
+                            send_telegram_message(chat_id, msg[i:i+4000])
+                    else:
+                        send_telegram_message(chat_id, msg)
+                else:
+                    send_telegram_message(chat_id, "Belum ada kontak.")
+                    
             elif text.startswith("/broadcast") and str(chat_id) == str(ADMIN_ID):
                 msg = text.replace("/broadcast", "").strip()
                 if msg:
@@ -441,14 +674,24 @@ def webhook():
                 else:
                     send_telegram_message(chat_id, "Gunakan: /broadcast <pesan>")
             else:
+                # Jika tidak ada perintah, kirim menu utama
                 send_main_menu(chat_id)
         
+        # ============ HANDLE CALLBACK QUERY (TOMbol INLINE) ============
         elif data and "callback_query" in data:
             callback_data = data["callback_query"]["data"]
             chat_id = data["callback_query"]["message"]["chat"]["id"]
             message_id = data["callback_query"]["message"]["message_id"]
             
-            if callback_data == "list_promos":
+            if callback_data == "share_contact":
+                # Kirim tombol share kontak
+                send_contact_request(chat_id)
+                # Answer callback query
+                url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
+                requests.post(url, json={"callback_query_id": data["callback_query"]["id"], "text": "Tekan tombol di bawah untuk share kontak!"})
+                return jsonify({"status": "ok"})
+            
+            elif callback_data == "list_promos":
                 send_promo_list(chat_id)
                 
             elif callback_data == "back_to_menu":
@@ -463,12 +706,10 @@ def webhook():
 • Klik promo yang ingin dilihat detailnya
 • Klik tombol "Kunjungi Website" untuk langsung ke website
 
-🎁 *Promo Tersedia:*
-• New Member Bonus 20% & 50%
-• Bonus Deposit Harian 10%
-• Rollingan Slot 1%
-• Cashback Sports 15%
-• Referral 2.5%
+🎁 *Bonus Share Kontak:*
+• Member yang share kontak dapat bonus 50% new member
+• Update promo langsung via WhatsApp
+• Event dan giveaway khusus
 
 ⏰ *Broadcast Otomatis:*
 Bot akan mengirim promo menarik setiap 20 menit!
@@ -482,7 +723,6 @@ Bot akan mengirim promo menarik setiap 20 menit!
                     promo_id = int(callback_data.split("_")[1])
                     promo = next((p for p in promos if p.get('id') == promo_id), None)
                     if promo:
-                        # Kirim detail promo dengan tombol klaim
                         send_telegram_message(
                             chat_id,
                             promo.get('message', ''),
@@ -490,11 +730,11 @@ Bot akan mengirim promo menarik setiap 20 menit!
                             promo.get('button_text', '🔥 Klaim Bonus'),
                             promo.get('button_url', config.get('website_url'))
                         )
-                        # Setelah kirim detail, kirim menu kembali
                         time.sleep(0.5)
                         keyboard = {
                             "inline_keyboard": [
                                 [{"text": "🔙 Kembali ke Daftar Promo", "callback_data": "list_promos"}],
+                                [{"text": "📞 Share Kontak", "callback_data": "share_contact"}],
                                 [{"text": "🏠 Menu Utama", "callback_data": "back_to_menu"}]
                             ]
                         }
@@ -505,7 +745,7 @@ Bot akan mengirim promo menarik setiap 20 menit!
                     print(f"Error processing promo callback: {e}")
                     send_telegram_message(chat_id, "Terjadi kesalahan. Silakan coba lagi.")
             
-            # Answer callback query (hilangkan loading)
+            # Answer callback query
             url = f"https://api.telegram.org/bot{TOKEN}/answerCallbackQuery"
             requests.post(url, json={"callback_query_id": data["callback_query"]["id"]})
         
@@ -530,7 +770,19 @@ def set_webhook():
         <h2>✅ Webhook Berhasil Diatur!</h2>
         <p>URL Webhook: <code>{webhook_url}</code></p>
         <p>Response: <pre>{json.dumps(result, indent=2)}</pre></p>
-        <p>Sekarang coba kirim <code>/start</code> ke bot di Telegram.</p>
+        <h3>📞 FITUR SHARE KONTAK AKTIF!</h3>
+        <p>Sekarang user bisa share kontak dengan:</p>
+        <ul>
+            <li>Klik tombol "📞 Share Kontak Saya" di menu utama</li>
+            <li>Atau ketik /share</li>
+        </ul>
+        <hr>
+        <h3>📊 API Baru:</h3>
+        <ul>
+            <li><a href="/api/contacts">/api/contacts</a> - Lihat semua kontak</li>
+            <li><a href="/api/contacts/stats">/api/contacts/stats</a> - Statistik kontak</li>
+            <li><a href="/api/contacts/export">/api/contacts/export</a> - Export kontak ke CSV</li>
+        </ul>
         <hr>
         <h3>📊 Cek Status Broadcast:</h3>
         <p><a href="/api/broadcast_status">/api/broadcast_status</a></p>
@@ -550,14 +802,21 @@ if __name__ == "__main__":
     broadcast_thread = threading.Thread(target=broadcast_loop, daemon=True)
     broadcast_thread.start()
     
+    # Inisialisasi file kontak jika belum ada
+    if not os.path.exists(CONTACTS_FILE):
+        with open(CONTACTS_FILE, "w") as f:
+            json.dump([], f)
+    
     port = int(os.environ.get("PORT", 5000))
     print("=" * 60)
-    print("🤖 ABAD4D BOT TELEGRAM - CLICKABLE PROMO")
+    print("🤖 ABAD4D BOT TELEGRAM - DENGAN FITUR SHARE KONTAK")
     print("=" * 60)
     print(f"🌐 Server running on port {port}")
+    print(f"📞 Fitur Share Kontak: AKTIF")
     print(f"📡 Kunjungi /set_webhook untuk mengaktifkan webhook")
     print(f"🔄 Broadcast loop: AKTIF (setiap {promo_settings.get('broadcast_interval_minutes', 20)} menit)")
     print(f"📊 Cek status: /api/broadcast_status")
+    print(f"📞 API Kontak: /api/contacts")
     print("=" * 60)
     
     app.run(host="0.0.0.0", port=port)
